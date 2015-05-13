@@ -272,8 +272,8 @@ module Spree
               shipping_amt = BigDecimal.new(info['shipping_amt'],2)
               tax_amt = BigDecimal.new(info['tax_amt'],2)
 
-              @order.adjustments.create!(amount: -shipping_amt, label: "Return #{rop_return_id} Shipping") if shipping_amt.nonzero?
-              @order.adjustments.create!(amount: -tax_amt, label: "Return #{rop_return_id} Tax") if tax_amt.nonzero?
+              @order.adjustments.create!(order: @order, amount: -shipping_amt, label: "Return #{rop_return_id} Shipping") if shipping_amt.nonzero?
+              @order.adjustments.create!(order: @order, amount: -tax_amt, label: "Return #{rop_return_id} Tax") if tax_amt.nonzero?
             end
           end
 

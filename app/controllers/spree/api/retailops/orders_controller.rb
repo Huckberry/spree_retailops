@@ -275,7 +275,7 @@ module Spree
 
           if rop_amt != apparent_amt
             changed = true
-            adj ||= order.adjustments.create(amount: rop_amt - apparent_amt, label: label, mandatory: false)
+            adj ||= order.adjustments.create(order: order, amount: rop_amt - apparent_amt, label: label, mandatory: false)
             adj.amount = rop_amt - apparent_amt
             adj.save!
           end
@@ -298,7 +298,7 @@ module Spree
 
           if adj_amt != amt
             changed = true
-            adj ||= order.adjustments.create(amount: amt, label: "Standard Shipping", mandatory: false)
+            adj ||= order.adjustments.create(order: order, amount: amt, label: "Standard Shipping", mandatory: false)
             adj.amount = amt
             adj.save!
           end

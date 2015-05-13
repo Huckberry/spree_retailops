@@ -33,7 +33,7 @@ module Spree
 
         if extracted_total > 0
           # TODO: is Standard Shipping the best name for this?  Should i18n happen?
-          @order.adjustments.create(amount: extracted_total, label: "Standard Shipping", mandatory: false)
+          @order.adjustments.create(order: @order, amount: extracted_total, label: "Standard Shipping", mandatory: false)
           @order.save!
           changed = true
         end
