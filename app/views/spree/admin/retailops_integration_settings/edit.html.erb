@@ -6,10 +6,24 @@
 
 <%= form_tag admin_retailops_integration_settings_path, :method => :put do %>
   <div data-hook="default-import" class="field align-center">
-    <%= hidden_field_tag 'preferences[retailops_import_by_default]', '0' %>
-    <%= check_box_tag 'preferences[retailops_import_by_default]', '1',  Spree::Config[:retailops_import_by_default] %>
+    <%= preference_field_tag('preferences[retailops_import_by_default]', Spree::Config[:retailops_import_by_default], :type => :boolean) %>
     <%= label_tag nil, Spree.t(:retailops_import_by_default) %>
+  </div>
 
+  <div data-hook="ship-adj" class="field align-center">
+    <%= label_tag nil, Spree.t(:retailops_express_shipping_price) %>
+    <div class="choices">
+      <ul>
+        <li>
+          <%= radio_button_tag 'preferences[retailops_express_shipping_price]', "adjustment", Spree::Config[:retailops_express_shipping_price] == "adjustment" %>
+          <%= label_tag :preferences_retailops_express_shipping_price_adjustment, Spree.t(:retailops_standard_shipping_adjustment) %>
+        </li>
+        <li class="white-space-nowrap">
+          <%= radio_button_tag 'preferences[retailops_express_shipping_price]', "cost", Spree::Config[:retailops_express_shipping_price] != "adjustment" %>
+          <%= label_tag :preferences_retailops_express_shipping_price_cost, Spree.t(:retailops_first_cost) %>
+        </li>
+      </ul>
+    </div>
   </div>
 
   <div class="form-buttons" data-hook="buttons">
