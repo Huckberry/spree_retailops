@@ -132,7 +132,7 @@ module Spree
         end
 
 
-        return method && method.calculator.compute(Spree::Stock::Package.new( stock_location, @order, contents ))
+        return method && method.calculator.compute(Spree::Stock::Package.new( stock_location, contents ))
       end
 
       def rop_tbd_method
