@@ -31,10 +31,11 @@ module Spree
         def add_packages
           ActiveRecord::Base.transaction do
             find_order
-            @order_helper.separate_shipment_costs
+            ship_price = @order_helper.effective_shipping_price
             params["packages"].to_a.each do |pkg|
               extract_items_into_package pkg
             end
+            @order_helper.apply_shipment_price(ship_price)
           end
           render text: {}.to_json
         end
@@ -53,9 +54,9 @@ module Spree
         def mark_complete
           ActiveRecord::Base.transaction do
             find_order
-            @order_helper.separate_shipment_costs
+            ship_price = @order_helper.effective_shipping_price
             assert_refund_adjustments params['refund_items'], true
-            @order.update!
+            @order_helper.apply_shipment_price(ship_price)
           end
           settle_payments_if_desired
           render text: @settlement_results.to_json
@@ -268,7 +269,7 @@ module Spree
 
             # set value
             # these might come in as strings, so coerce *before* summing
-            return_obj.amount = BigDecimal.new(info['refund_amt'],2) - (info['tax_amt'] ? (BigDecimal.new(info['tax_amt'],2) + BigDecimal.new(info['shipping_amt'],2)) : 0)
+            return_obj.amount = info['refund_amt'].to_d - (info['tax_amt'] ? (info['tax_amt'].to_d + info['shipping_amt'].to_d) : 0.to_d)
             return_obj.save!
 
             # receive it
@@ -281,8 +282,8 @@ module Spree
             # Possible issue: Setting "Refund" = No for an item will be treated the same as nulling the refund with a restocking fee
 
             if info['tax_amt']
-              shipping_amt = BigDecimal.new(info['shipping_amt'],2)
-              tax_amt = BigDecimal.new(info['tax_amt'],2)
+              shipping_amt = info['shipping_amt'].to_d
+              tax_amt = info['tax_amt'].to_d
 
               @order.adjustments.create!(amount: -shipping_amt, label: "Return #{rop_return_id} Shipping") if shipping_amt.nonzero?
               @order.adjustments.create!(amount: -tax_amt, label: "Return #{rop_return_id} Tax") if tax_amt.nonzero?

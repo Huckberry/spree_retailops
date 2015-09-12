@@ -3,6 +3,9 @@ en:
     retailops_integration_settings: "RetailOps Integration Settings"
     retailops_advisory_ship_calculator: "RetailOps advisory shipping method"
     retailops_import_by_default: "Import newly created orders into RetailOps by default"
+    retailops_express_shipping_price: "Record shipping prices as:"
+    retailops_standard_shipping_adjustment: '"Standard Shipping" Adjustment'
+    retailops_first_cost: "Cost of unshipped or first package"
     retailops_import_status: "RetailOps Import"
     retailops_decline_import: "Stop"
     retailops_accept_import: "Accept"
