@@ -335,7 +335,7 @@ module Spree
           # new state so that RetailOps can reconcile its own notion of the
           # payment state.
           def settle_payments_if_desired
-            partial_settle("capture": true, "partial_capture": true, "void": true, "refund": true)
+            partial_settle("capture" => true, "partial_capture" => true, "void" => true, "refund" => true)
           end
 
           def partial_settle(cmd)
