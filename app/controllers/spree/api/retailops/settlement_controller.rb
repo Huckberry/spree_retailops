@@ -64,12 +64,18 @@ module Spree
 
         def add_refund
           ActiveRecord::Base.transaction do
-            find_order
-            assert_return params
-            @order.update!
+            order = Order.find_by!(number: params['settlement']["order_refnum"].to_s)
+            rma = order.return_authorizations.detect { |r| r.number == params['settlement']["rma_id"].to_s }
+            spree_return = rma.customer_returns.detect {|r| r.number == params['settlement']["return_id"].to_s}
+            return_items = []
+            rma.return_items.each do |ri|
+              params["settlement"]['return_items'].to_a.each do |rops_ri|
+                return_items << ri if ri.variant.sku == rops_ri['sku']
+              end
+            end
+            reibursement = Spree::Reimbursement.create(order: order, customer_return: spree_return, return_items: return_items, total: params['settlement']["refund_amt"].to_f)
           end
-          settle_payments_if_desired
-          render text: @settlement_results.to_json
+          render text: "".to_json
         end
 
         # duplicates /api/order/:num/cancel but it seems useful to have a single point of contact
@@ -199,8 +205,8 @@ module Spree
             rop_return_id = info["return_id"].to_i
             rop_rma_id = info["rma_id"].to_i # may be nil->0
 
-            return_obj = @order.return_authorizations.detect { |r| r.number == "RMA-RET-#{rop_return_id}" }
-            deduct_rma_obj = @order.return_authorizations.detect { |r| r.number == "RMA-RO-#{rop_rma_id}" }
+            return_obj = @order.return_authorizations.detect { |r| r.number == "#{rop_return_id}" }
+            deduct_rma_obj = @order.return_authorizations.detect { |r| r.number == "#{rop_rma_id}" }
 
             return if return_obj # if it exists but isn't received we're in a pretty weird state because we're supposed to receive in the same txn we create
 
@@ -243,8 +249,10 @@ module Spree
 
             # create an RMA for our return
             return_obj = @order.return_authorizations.build
-            return_obj.number = "RMA-RET-#{rop_return_id}"
+            return_obj.number = "#{rop_return_id}"
             return_obj.stock_location_id = @order.shipped_shipments.first.stock_location_id # anything will be wrong since we don't want spree to restock :x
+            return_obj.reason = Spree::ReturnAuthorizationReason.where("name like '%Retail Ops%'").first || Spree::ReturnAuthorizationReason.first
+
             return_obj.save! # needs an ID before we can add stuf
 
             sloc = Spree::StockLocation.find(return_obj.stock_location_id) # "rma.stock_location" crashes.  possible has_one/has_many mixup?
