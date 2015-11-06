@@ -167,7 +167,7 @@ module Spree
                   shipment.save!
                 end
 
-                li = order.contents.add(variant, qty - oldqty, nil, shipment)
+                li = order.contents.add(variant, qty - oldqty, {shipment: shipment})
               elsif qty < oldqty
                 changed = true
                 li = order.contents.remove(variant, oldqty - qty)
@@ -233,8 +233,8 @@ module Spree
               # Allow tax to organically recalculate
               # *slightly* against the spirit of adjustments to automatically reopen them, but this is triggered on item changes which are (generally) human-initiated in RO
               if items_changed
-                order.all_adjustments.tax.each { |a| a.open if a.closed? }
-                order.adjustments.promotion.each { |a| a.open if a.closed? }
+                order.all_adjustments.tax.each { |a| a.fire_state_event(:open) if a.closed? }
+                order.adjustments.promotion.each { |a| a.fire_state_event(:open) if a.closed? }
               end
 
               order.update!
@@ -267,84 +267,98 @@ module Spree
 
           # find Spree RMA.  bail out if received (shouldn't happen)
           return unless order.shipped_shipments.any?  # avoid RMA create failures
-          rop_rma_str = "RMA-RO-#{rma["id"].to_i}"
-          rma_obj = order.return_authorizations.detect { |r| r.number == rop_rma_str }
-          return if rma_obj && rma_obj.received?
+          spree_rma = find_rma(order, rma)
 
-          # for each ROP return: check if it exists in Spree.  Reduce RMA amount for returns that
-          # have been filed.
+          #Return if everything's been recieved
+          return if spree_rma.present? && rma_received?(spree_rma)
 
-          closed_value = 0.to_d
-          closed_items = {}
-
-          rma["returns"].to_a.each do |ret|
-            ret_str = "RMA-RET-#{ret["id"].to_i}"
-            ret_obj = order.return_authorizations.detect { |r| r.number == ret_str }
-
-            if ret_obj && ret_obj.received?
-              closed_value += ret['refund_amt'].to_d - (ret['tax_amt'] ? (ret['tax_amt'].to_d + ret['shipping_amt'].to_d) : 0)
-              ret["items"].to_a.each do |it|
-                it_obj = order.line_items.detect { |i| i.id.to_s == it["channel_refnum"].to_s }
-                closed_items[it_obj] = (closed_items[it_obj] || 0) + it["quantity"].to_i if it_obj
+          #If the rma exists, sync return items
+          if spree_rma.present?
+            rma['items'].to_a.each do |item|
+              if !has_item?(spree_rma, item)
+                add_item_to_rma(spree_rma, item)
               end
             end
-          end
+            rma['returns'].to_a.each do |ret|
+              #Create a customer return
+              if ret['items'].to_a.size > 0
+                cust_return = Spree::CustomerReturn.new(stock_location: order.shipped_shipments.first.stock_location, number: ret["id"])
+                spree_return_items = []
+                ret['items'].to_a.each do |item|
+                  if item['quantity'].to_i > 0
+                    if !has_item?(spree_rma, item)
+                      add_item_to_rma(spree_rma, item)
+                    end
+                    spree_return_item = find_return_item(spree_rma, item)
+                    if spree_return_item.count <= item['quantity'].to_i
+                      spree_return_items << spree_return_item.slice(0..(item['quantity'].to_i - 1))
+                    end
+                  end
+                end
+                cust_return.return_items = spree_return_items.flatten!
+                cust_return.save
+                #reject the items if the refund amount is 0
+                #This should mean that we have recieved the item, but don't want to issue a refund.
+                if ret['refund_amt'].to_i == 0
+                  spree_return_items.each{|sri| sri.reject}
+                end
+              end
+            end
 
-          use_items = {}
-          use_total = 0
+          else
 
-          rma["items"].to_a.each do |it|
-            line = order.line_items.detect { |i| i.id.to_s == it["channel_refnum"].to_s } or next
-            use_items[line] = [ 0, it["quantity"].to_i - (closed_items[line] || 0) ].max
-          end
-
-          use_items.each do |li, qty|
-            use_total += qty
-          end
-
-          # create RMA if not exists and items > 0
-          return if !rma_obj && use_total <= 0
-
-          unless rma_obj
-            rma_obj = order.return_authorizations.build
-            rma_obj.number = rop_rma_str
-            rma_obj.save! # have an ID *before* adding items
-            changed = true
-          end
-
-          # set RMA item quantities
-
-          changed = false
-
-          order.line_items.each do |li|
-            # this function is misnamed, it sets, it does not add
-            changed = true # use rma_obj.inventory_units to identify changes if it ever becomes necessary
-            rma_obj.add_variant(li.variant_id, use_items[li] || 0)
-          end
-
-          # delete RMA if all items gone
-          if use_total == 0
-            rma_obj.destroy!
+            spree_rma = create_spree_rma(order,rma)
             return true
           end
 
-          # set RMA amount
-          if rma["subtotal_amt"].present? || rma["refund_amt"].present?
-            use_value = rma['refund_amt'].to_d - (rma['tax_amt'] ? (rma['tax_amt'].to_d + rma['shipping_amt'].to_d) : 0) - closed_value
-            if use_value != rma_obj.amount
-              rma_obj.amount = use_value
-              changed = true
-            end
-          end
 
-          rma_obj.save! if changed
-          return true
+
         end
 
         private
-          def options
-            params['options'] || {}
+        def options
+          params['options'] || {}
+        end
+
+        def find_rma(order, rma)
+          rop_rma_str = "#{rma["id"]}"
+          spree_rma = order.return_authorizations.detect { |r| r.number == rop_rma_str }
+        end
+
+        def create_spree_rma(order, rma)
+          rop_rma_str = "#{rma["id"]}"
+          rma_obj = order.return_authorizations.build
+          rma_obj.number = rop_rma_str
+          rma_obj.stock_location_id = order.shipped_shipments.first.stock_location_id
+          rma_obj.reason = Spree::ReturnAuthorizationReason.where("name like '%Retail Ops%'").first || Spree::ReturnAuthorizationReason.first
+          rma_obj.save
+
+          rma["items"].to_a.each do |it|
+            add_item_to_rma(rma_obj, it, order)
           end
+          rma_obj
+        end
+
+        def has_item?(spree_rma, item)
+          spree_rma.return_items.includes(inventory_unit: [:variant]).map{|a| a.variant.sku == item['sku']}.any?
+        end
+        def find_return_item(spree_rma, item)
+          spree_rma.return_items.includes(inventory_unit: [:variant]).select{|a| a.variant.sku == item['sku']}
+        end
+        def add_item_to_rma(spree_rma, item, order)
+          iu = order.inventory_units.select{|iu| iu.line_item_id.to_s == item["channel_refnum"].to_s}.first
+          return_item = spree_rma.return_items.build
+          return_item.inventory_unit = iu
+          return_item.pre_tax_amount = iu.try(:line_item).try(:price).try(:to_f)
+          return_item.save
+        end
+
+        def rma_received?(spree_rma)
+          return false unless spree_rma.present?
+          received = true
+          spree_rma.return_items.each{|ri| received = false unless ri.received?}
+          received
+        end
       end
     end
   end
