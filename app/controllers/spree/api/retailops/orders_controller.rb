@@ -258,6 +258,7 @@ module Spree
           }.to_json
         end
 
+        # http://help.retailops.com/hc/en-us/articles/206379093
         def sync_rma(order, rma)
           # This is half of the RMA/return push mechanism: it handles RMAs created in RetailOps by
           # creating matching RMAs in Spree numbered RMA-ROP-NNN.  Any inventory which has been
