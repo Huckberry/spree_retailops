@@ -297,10 +297,12 @@ module Spree
                 end
                 cust_return.return_items = spree_return_items.flatten!
                 cust_return.save
-                #reject the items if the refund amount is 0
-                #This should mean that we have recieved the item, but don't want to issue a refund.
+
+                # Require Manual Intervention if the items if the refund amount is 0. A 0 here
+                # means that the item was received but we cannot resell it. It's possible we should
+                # still issue a refund here, for example if the customer received the item damaged.
                 if ret['refund_amt'].to_i == 0
-                  spree_return_items.each{|sri| sri.reject}
+                  spree_return_items.each { |sri| sri.require_manual_intervention }
                 end
               end
             end
