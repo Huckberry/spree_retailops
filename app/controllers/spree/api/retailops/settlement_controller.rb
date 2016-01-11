@@ -73,7 +73,8 @@ module Spree
                 return_items << ri if ri.variant.sku == rops_ri['sku']
               end
             end
-            reibursement = Spree::Reimbursement.create(order: order, customer_return: spree_return, return_items: return_items, total: params['settlement']["refund_amt"].to_f)
+            reimbursement_total = BigDecimal.new(params['settlement']["refund_amt"])
+            reibursement = Spree::Reimbursement.create(order: order, customer_return: spree_return, return_items: return_items, total: reimbursement_total)
           end
           render text: "".to_json
         end
