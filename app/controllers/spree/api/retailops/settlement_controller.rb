@@ -78,6 +78,18 @@ module Spree
           render text: "".to_json
         end
 
+        def payment_command
+          find_order
+
+          case params['command']
+          when 'partial_settle'
+            partial_settle(params['mode'])
+            render text: @settlement_results.to_json
+          else
+            throw 'Unsupported payment command'
+          end
+        end
+
         # duplicates /api/order/:num/cancel but it seems useful to have a single point of contact
         def cancel
           find_order
@@ -331,29 +343,34 @@ module Spree
           # new state so that RetailOps can reconcile its own notion of the
           # payment state.
           def settle_payments_if_desired
+            partial_settle("capture" => true, "partial_capture" => true, "void" => true, "refund" => true)
+          end
+
+          def partial_settle(cmd)
             @settlement_results = { "errors" => [], "status" => [] }
+            bias = cmd['target'] ? BigDecimal.new(cmd['target']) - @order.total : BigDecimal.new(0)
 
             op = nil
 
             unless @order.canceled?
-              while options["ok_capture"] && @order.outstanding_balance > 0 && op = pick_payment { |opp| opp.pending? && opp.amount > 0 && opp.amount <= @order.outstanding_balance }
+              while (cmd["capture"] && options["ok_capture"]) && (@order.outstanding_balance + bias) > 0 && op = pick_payment { |opp| opp.pending? && opp.amount > 0 && opp.amount <= (@order.outstanding_balance + bias) }
                 rescue_gateway_error { op.capture! }
               end
 
-              while options["ok_partial_capture"] && @order.outstanding_balance > 0 && op = pick_payment { |opp| opp.pending? && opp.amount > 0 && opp.amount > @order.outstanding_balance }
+              while (cmd["partial_capture"] && options["ok_partial_capture"]) && (@order.outstanding_balance + bias) > 0 && op = pick_payment { |opp| opp.pending? && opp.amount > 0 && opp.amount > (@order.outstanding_balance + bias) }
                 # Spree 2.2.x allows you to pass an argument to
                 # Spree::Payment#capture! but this does not seem to do quite
                 # what we want.  In particular the payment system treats the
                 # remainder of the payment as pending.
-                op.amount = @order.outstanding_balance
+                op.amount = (@order.outstanding_balance + bias)
                 rescue_gateway_error { op.capture! }
               end
 
-              while options["ok_void"] && @order.outstanding_balance <= 0 && op = pick_payment { |opp| opp.pending? && opp.amount > 0 }
+              while (cmd["void"] && options["ok_void"]) && (@order.outstanding_balance + bias) <= 0 && op = pick_payment { |opp| opp.pending? && opp.amount > 0 }
                 rescue_gateway_error { op.void_transaction! }
               end
 
-              while options["ok_refund"] && @order.outstanding_balance < 0 && op = pick_payment { |opp| opp.completed? && opp.can_credit? }
+              while (cmd["refund"] && options["ok_refund"]) && (@order.outstanding_balance + bias) < 0 && op = pick_payment { |opp| opp.completed? && opp.can_credit? }
                 rescue_gateway_error { op.credit! } # remarkably, THIS one picks the right amount for us
               end
             end
