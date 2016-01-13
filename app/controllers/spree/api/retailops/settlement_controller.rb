@@ -62,20 +62,47 @@ module Spree
           render text: @settlement_results.to_json
         end
 
+        # This gets called by retailsops after a returned item has been
+        # received and accepted at the warehouse. We need to look elsehwere
+        # for hook when returned item has been received but can not be restocked.
+        #
+        # This is a local Huckberry override of this callback, originally by
+        # Dom modified by jrochkind. What spree_retailsops was doing originally
+        # is hard to tell, ALL we need to do here is create the
+        # Spree::Reimbursement, other retailops sync methods have
+        # already sync'd other data.
+        #
+        # But we want is to create one or more Spree::Reimbursement items
+        # (which is not yet a refund, more like a proposed refund),
+        # in the right amounts and other values for the transaction.
+        #
+        # We're not sure if this can be called more than once per Order
+        # by RetailsOps, maybe once per returned item?
+        #
+        # We call out to our custom ReturnHandler in Huckberry
+        # main app, easier to work with code in main app.
         def add_refund
-          ActiveRecord::Base.transaction do
-            order = Order.find_by!(number: params['settlement']["order_refnum"].to_s)
-            rma = order.return_authorizations.detect { |r| r.number == params['settlement']["rma_id"].to_s }
-            spree_return = rma.customer_returns.detect {|r| r.number == params['settlement']["return_id"].to_s}
-            return_items = []
-            rma.return_items.each do |ri|
-              params["settlement"]['return_items'].to_a.each do |rops_ri|
-                return_items << ri if ri.variant.sku == rops_ri['sku']
+          if defined? ReimbursementHandler
+            reimbursement = ReimbursementHandler.from_retailops_add_refund(
+              params['settlement']
+            ).create_reimbursement
+          else
+            Bugsnag.notify(ArgumentError.new("SettlementController#add_refund can not find ReimbursementHandler class, and is using old legacy wrong logic"))
+            ActiveRecord::Base.transaction do
+              order = Order.find_by!(number: params['settlement']["order_refnum"].to_s)
+              rma = order.return_authorizations.detect { |r| r.number == params['settlement']["rma_id"].to_s }
+              spree_return = rma.customer_returns.detect {|r| r.number == params['settlement']["return_id"].to_s}
+              return_items = []
+              rma.return_items.each do |ri|
+                params["settlement"]['return_items'].to_a.each do |rops_ri|
+                  return_items << ri if ri.variant.sku == rops_ri['sku']
+                end
               end
+              reimbursement_total = BigDecimal.new(params['settlement']["refund_amt"])
+              reibursement = Spree::Reimbursement.create(order: order, customer_return: spree_return, return_items: return_items, total: reimbursement_total)
             end
-            reimbursement_total = BigDecimal.new(params['settlement']["refund_amt"])
-            reibursement = Spree::Reimbursement.create(order: order, customer_return: spree_return, return_items: return_items, total: reimbursement_total)
           end
+
           render text: "".to_json
         end
 
