@@ -258,109 +258,60 @@ module Spree
           }.to_json
         end
 
-        # http://help.retailops.com/hc/en-us/articles/206379093
-        def sync_rma(order, rma)
+        def sync_rma(order, rma_params)
           # This is half of the RMA/return push mechanism: it handles RMAs created in RetailOps by
           # creating matching RMAs in Spree numbered RMA-ROP-NNN.  Any inventory which has been
           # returned in RetailOps will have a corresponding RetailOps return; if that exists in
           # Spree, then we *exclude* that inventory from the RMA being created and delete the RMA
           # when all items are removed.
 
-          # find Spree RMA.  bail out if received (shouldn't happen)
-          return unless order.shipped_shipments.any?  # avoid RMA create failures
-          spree_rma = find_rma(order, rma)
-
-          #Return if everything's been recieved
-          return if spree_rma.present? && rma_received?(spree_rma)
-
-          #If the rma exists, sync return items
-          if spree_rma.present?
-            rma['items'].to_a.each do |item|
-              if !has_item?(spree_rma, item)
-                add_item_to_rma(spree_rma, item)
-              end
-            end
-            rma['returns'].to_a.each do |ret|
-              #Create a customer return
-              if ret['items'].to_a.size > 0
-                cust_return = Spree::CustomerReturn.new(stock_location: order.shipped_shipments.first.stock_location, number: ret["id"])
-                spree_return_items = []
-                ret['items'].to_a.each do |item|
-                  if item['quantity'].to_i > 0
-                    if !has_item?(spree_rma, item)
-                      add_item_to_rma(spree_rma, item)
-                    end
-                    spree_return_item = find_return_item(spree_rma, item)
-                    if spree_return_item.count <= item['quantity'].to_i
-                      spree_return_items << spree_return_item.slice(0..(item['quantity'].to_i - 1))
-                    end
-                  end
-                end
-                cust_return.return_items = spree_return_items.flatten!
-                cust_return.save
-
-                # Require Manual Intervention if the items if the refund amount is 0. A 0 here
-                # means that the item was received but we cannot resell it. It's possible we should
-                # still issue a refund here, for example if the customer received the item damaged.
-                if ret['refund_amt'].to_i == 0
-                  spree_return_items.each { |sri| sri.require_manual_intervention }
-                end
-              end
-            end
-
-          else
-
-            spree_rma = create_spree_rma(order,rma)
-            return true
-          end
-
-
-
+          # Calls out to the parent application's custom handling for RMA data. The data
+          # is passed from ROPs to the controller in the following format, and will be passed
+          # straight through the underlying application.
+          #
+          # {
+          #     "discount_amt": 0,
+          #     "id": "10067",
+          #     "items": [
+          #         {
+          #             "channel_refnum": "605775",
+          #             "order_item_id": "223845",
+          #             "quantity": "1",
+          #             "sku": "101575"
+          #         }
+          #     ],
+          #     "product_amt": 114.98,
+          #     "refund_amt": 114.98,
+          #     "returns": [
+          #         {
+          #             "discount_amt": 0,
+          #             "id": "6128",
+          #             "items": [
+          #                 {
+          #                     "channel_refnum": "605775",
+          #                     "order_item_id": "223845",
+          #                     "quantity": "1",
+          #                     "sku": "101575"
+          #                 }
+          #             ],
+          #             "product_amt": 114.98,
+          #             "refund_amt": 114.98,
+          #             "shipping_amt": 0,
+          #             "subtotal_amt": 114.98,
+          #             "tax_amt": 0
+          #         }
+          #     ],
+          #     "shipping_amt": 0,
+          #     "subtotal_amt": 114.98,
+          #     "tax_amt": 0
+          # }
+          #
+          order.process_retail_ops_rma(rma_params)
         end
 
         private
         def options
           params['options'] || {}
-        end
-
-        def find_rma(order, rma)
-          rop_rma_str = "#{rma["id"]}"
-          spree_rma = order.return_authorizations.detect { |r| r.number == rop_rma_str }
-        end
-
-        def create_spree_rma(order, rma)
-          rop_rma_str = "#{rma["id"]}"
-          rma_obj = order.return_authorizations.build
-          rma_obj.number = rop_rma_str
-          rma_obj.stock_location_id = order.shipped_shipments.first.stock_location_id
-          rma_obj.reason = Spree::ReturnAuthorizationReason.where("name like '%Retail Ops%'").first || Spree::ReturnAuthorizationReason.first
-          rma_obj.save
-
-          rma["items"].to_a.each do |it|
-            add_item_to_rma(rma_obj, it, order)
-          end
-          rma_obj
-        end
-
-        def has_item?(spree_rma, item)
-          spree_rma.return_items.includes(inventory_unit: [:variant]).map{|a| a.variant.sku == item['sku']}.any?
-        end
-        def find_return_item(spree_rma, item)
-          spree_rma.return_items.includes(inventory_unit: [:variant]).select{|a| a.variant.sku == item['sku']}
-        end
-        def add_item_to_rma(spree_rma, item, order)
-          iu = order.inventory_units.select{|iu| iu.line_item_id.to_s == item["channel_refnum"].to_s}.first
-          return_item = spree_rma.return_items.build
-          return_item.inventory_unit = iu
-          return_item.pre_tax_amount = iu.try(:line_item).try(:price).try(:to_f)
-          return_item.save
-        end
-
-        def rma_received?(spree_rma)
-          return false unless spree_rma.present?
-          received = true
-          spree_rma.return_items.each{|ri| received = false unless ri.received?}
-          received
         end
       end
     end
