@@ -4,6 +4,8 @@ module Spree
       attr_accessor :order, :options
 
       def standard_shipping_label
+        # This label is recognized in Huckberry app/models/spree/order_decorator#true_ship_total
+        # If it changes need to update there.
         'Standard Shipping'
       end
 
