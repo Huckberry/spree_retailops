@@ -11,6 +11,7 @@ task :default do
     Rake::Task[:test_app].invoke
     Dir.chdir("../../")
   end
+
   Rake::Task[:spec].invoke
 end
 

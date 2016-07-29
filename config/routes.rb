@@ -6,7 +6,7 @@ Spree::Core::Engine.routes.draw do
 
       post 'orders', to: 'orders#index'
       post 'orders/mark_exported', to: 'orders#export'
-      post 'orders/synchronize', to: 'orders#synchronize'
+      post 'orders/synchronize', to: 'orders#synchronize', as: :synchronize
       post 'orders/add_packages', to: 'settlement#add_packages'
       post 'orders/mark_complete', to: 'settlement#mark_complete'
       post 'orders/add_refund', to: 'settlement#add_refund'

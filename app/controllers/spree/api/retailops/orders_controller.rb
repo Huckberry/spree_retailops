@@ -107,6 +107,38 @@ module Spree
 
         # This probably calls update! far more times than it needs to as a result of line item hooks, etc
         # Exercise for interested parties: fix that
+        #
+        # Here are example parameters
+        #
+        #
+        # {
+        #   "order_amts" => {
+        #     "shipping_amt" => 4.98,
+        #     "discount_amt" => 0,
+        #     "tax_amt" => 0,
+        #     "direct_tax_amt" => 0
+        #   },
+        #   "rmas" => nil,
+        #   "line_items" => [
+        #     {
+        #       "estimated_extended_cost" => "27.50",
+        #       "apportioned_ship_amt" => 4.98,
+        #       "sku" => "136270",
+        #       "quantity" => "1",
+        #       "estimated_ship_date" => 1458221964,
+        #       "direct_ship_amt" => 0,
+        #       "corr" => "575714",
+        #       "removed" => nil,
+        #       "estimated_cost" => 27.5,
+        #       "estimated_unit_cost" => 27.5,
+        #       "unit_price" => 49.98
+        #     }
+        #   ],
+        #   "options" => {},
+        #   "order_refnum" => "R280725117",
+        #   "order" => {}
+        # }
+        #
         def synchronize
           authorize! :update, Order
           changed = false
@@ -116,9 +148,9 @@ module Spree
           @helper.order = order
           @helper.options = options
           ActiveRecord::Base.transaction do
-
             # RetailOps will be sending in an authoritative (potentially updated) list of line items
-            # We make our data match that as well as possible, and then send the list back annotated with channel_refnums and quantities/costs/etc
+            # We make our data match that as well as possible, and then send the list back annotated
+            # with channel_refnums and quantities/costs/etc
 
             used_v = {}
 
